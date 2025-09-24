@@ -72,7 +72,10 @@ class WordpressReview(object):  # noqa: WPS214, WPS230
         logging.info(f'Loading review: {self.path}')
         url: str = f'{SCHEME}{BASE_URL}{self.path}'
 
-        client: httpx.Client = httpx.Client(http2=False)
+        client: httpx.Client = httpx.Client(
+            http2=False,
+            timeout=httpx.Timeout(30.0)  # 30 second timeout for slow pages
+        )
         response: httpx._models.Response = client.get(url, follow_redirects=True)  # noqa: WPS437
 
         if response.status_code != CONNECTION_OK:

@@ -11,27 +11,21 @@ Before running any commands, you need to activate the virtual environment where 
 source test_venv/bin/activate
 
 # You'll see (test_venv) in your prompt when activated
-# Now all tap-wordpress-reviews commands will work
-```
-
-Alternatively, you can use the full path without activating:
-```bash
-./test_venv/bin/tap-wordpress-reviews --config config.json --discover
 ```
 
 ### 2. Create Configuration File
 
-The tap requires a `config.json` file to specify which WordPress plugins to monitor. Create it like this:
+The tap requires a `config.json` file to specify which WordPress plugins to monitor:
 
 ```bash
-# Basic config for a single plugin
+# Single plugin
 echo '{"plugins": ["wordpress-seo"]}' > config.json
 
-# Or with more options
+# Multiple plugins with options
 cat > config.json << 'EOF'
 {
-  "plugins": ["wordpress-seo"],
-  "number": 30,
+  "plugins": ["wordpress-seo", "akismet"],
+  "number": 10,
   "thread_filter": "all"
 }
 EOF
@@ -40,199 +34,207 @@ EOF
 **Configuration Options:**
 - `plugins` (required): Array of WordPress plugin slugs to fetch data from
 - `number` (optional, default: 30): Number of items to fetch per page
-- `thread_filter` (optional, default: "all"): For support threads - can be "all", "active", or "unresolved"
+- `thread_filter` (optional, default: "all"): For support threads - "all", "active", or "unresolved"
 
-**Examples of plugin slugs:**
+**Popular plugin slugs:**
 - `"wordpress-seo"` - Yoast SEO
 - `"akismet"` - Akismet Anti-Spam
 - `"woocommerce"` - WooCommerce
 - `"contact-form-7"` - Contact Form 7
 - `"jetpack"` - Jetpack
 
-## 🔍 Discovery & Exploration
+### 3. Prepare Catalog (Required for Sync)
 
-### See what streams are available (pretty printed)
+Before syncing, you need a catalog. Discovery creates it but doesn't fetch any data:
+
 ```bash
-tap-wordpress-reviews --config config.json --discover | jq .
+# Create catalog (NO HTTP requests - just returns schema)
+tap-wordpress-reviews --config config.json --discover > catalog.json
 ```
 
-### Just see stream names and their replication methods
-```bash
-tap-wordpress-reviews --config config.json --discover | jq '.streams[] | {stream: .tap_stream_id, replication: .replication_method, key: .replication_key}'
-```
+## 🔥 Actually Syncing Data (Makes HTTP Requests!)
 
-### Check the schema for reviews
-```bash
-tap-wordpress-reviews --config config.json --discover | jq '.streams[] | select(.tap_stream_id=="reviews") | .schema.properties | keys'
-```
+### Quick Start - Sync Everything
 
-### Check the schema for support threads
 ```bash
-tap-wordpress-reviews --config config.json --discover | jq '.streams[] | select(.tap_stream_id=="support_threads") | .schema.properties | keys'
+# This ACTUALLY fetches data from WordPress.org!
+tap-wordpress-reviews --config config.json --catalog catalog.json
+
+# Watch it work (see the HTTP requests)
+tap-wordpress-reviews --config config.json --catalog catalog.json 2>&1 | grep "Loading"
+
+# See first 5 reviews
+tap-wordpress-reviews --config config.json --catalog catalog.json | grep "^RECORD" | head -5 | jq .
 ```
 
 ## 🎯 Sync Reviews Only
 
-### Create a catalog with just reviews selected
+### Fetch reviews for a single plugin
+
 ```bash
-tap-wordpress-reviews --config config.json --discover | jq '.streams[0] | .metadata[0].metadata.selected = true | {"streams": [.]}' > reviews_catalog.json
+# Config for one plugin
+echo '{"plugins": ["wordpress-seo"], "number": 10}' > config.json
+
+# Create catalog and select only reviews stream
+tap-wordpress-reviews --config config.json --discover | \
+  jq '.streams[0] | .metadata[0].metadata.selected = true | {"streams": [.]}' > reviews_catalog.json
+
+# SYNC - This fetches real reviews from WordPress.org!
+tap-wordpress-reviews --config config.json --catalog reviews_catalog.json | \
+  grep "^RECORD" | head -5 | jq '.record | {author, rating, date}'
 ```
 
-### Sync just reviews (see the data flow)
-```bash
-tap-wordpress-reviews --config config.json --catalog reviews_catalog.json | grep "^RECORD" | head -5 | jq .
-```
+### See 1-star reviews (while syncing)
 
-### Count how many reviews you're getting
 ```bash
-tap-wordpress-reviews --config config.json --catalog reviews_catalog.json | grep -c "^RECORD"
+# Fetch and filter for 1-star reviews in real-time
+tap-wordpress-reviews --config config.json --catalog reviews_catalog.json | \
+  grep "^RECORD" | jq 'select(.record.rating == 1) | .record | {author, rating, text: .text[:100]}'
 ```
 
 ## 🆘 Sync Support Threads Only
 
-### Create a catalog with just support threads selected
+### Fetch unresolved support threads
+
 ```bash
-tap-wordpress-reviews --config config.json --discover | jq '.streams[1] | .metadata[0].metadata.selected = true | {"streams": [.]}' > support_catalog.json
-```
+# Config for unresolved threads only
+cat > config_unresolved.json << 'EOF'
+{
+  "plugins": ["wordpress-seo"],
+  "number": 10,
+  "thread_filter": "unresolved"
+}
+EOF
 
-### Sync support threads with different filters
-```bash
-echo '{"plugins": ["wordpress-seo"], "thread_filter": "unresolved"}' > config_unresolved.json
-tap-wordpress-reviews --config config_unresolved.json --catalog support_catalog.json | grep "^RECORD" | head -3 | jq .
-```
+# Create catalog for support threads
+tap-wordpress-reviews --config config_unresolved.json --discover | \
+  jq '.streams[1] | .metadata[0].metadata.selected = true | {"streams": [.]}' > support_catalog.json
 
-### Try active threads only
-```bash
-echo '{"plugins": ["wordpress-seo"], "thread_filter": "active"}' > config_active.json
-tap-wordpress-reviews --config config_active.json --catalog support_catalog.json | grep "^RECORD" | head -3 | jq .
-```
-
-## 📊 Both Streams Together
-
-### Create a catalog with both streams selected
-```bash
-tap-wordpress-reviews --config config.json --discover | jq '.streams[] | .metadata[0].metadata.selected = true' | jq -s '{"streams": .}' > both_catalog.json
-```
-
-### Run both and see what's happening
-```bash
-tap-wordpress-reviews --config config.json --catalog both_catalog.json 2>&1 | grep "^INFO"
-```
-
-### See records from both streams
-```bash
-tap-wordpress-reviews --config config.json --catalog both_catalog.json | grep "^RECORD" | jq -r .stream | sort | uniq -c
-```
-
-## 🔄 Incremental Sync with State
-
-### First run - saves state
-```bash
-tap-wordpress-reviews --config config.json --catalog reviews_catalog.json | tee >(grep "^STATE" | tail -1 | jq . > state.json)
-```
-
-### See what's in the state
-```bash
-cat state.json | jq .
-```
-
-### Second run - only gets new data since last state
-```bash
-tap-wordpress-reviews --config config.json --catalog reviews_catalog.json --state state.json | grep "^RECORD" | wc -l
-```
-
-### Watch the state evolve during backfill
-```bash
-tap-wordpress-reviews --config config.json --catalog reviews_catalog.json | grep "^STATE" | jq '.bookmarks.reviews.backfill'
-```
-
-## 🎮 Fun Exploration Commands
-
-### See reviews with 1-star ratings only
-```bash
-tap-wordpress-reviews --config config.json --catalog reviews_catalog.json | grep "^RECORD" | jq 'select(.record.rating == 1) | .record | {author, rating, date, text: .text[:100]}'
-```
-
-### Find reviews with the most comments
-```bash
-tap-wordpress-reviews --config config.json --catalog reviews_catalog.json | grep "^RECORD" | jq '.record | {path, comments: .comments | length}' | jq -s 'sort_by(.comments) | reverse | .[0:5]'
-```
-
-### See support threads marked as resolved
-```bash
-tap-wordpress-reviews --config config.json --catalog support_catalog.json | grep "^RECORD" | jq 'select(.record.status == "resolved") | .record.title'
+# SYNC - Fetches real support threads!
+tap-wordpress-reviews --config config_unresolved.json --catalog support_catalog.json | \
+  grep "^RECORD" | head -3 | jq '.record | {title, status, author}'
 ```
 
 ### Find threads where plugin author responded
+
 ```bash
-tap-wordpress-reviews --config config.json --catalog support_catalog.json | grep "^RECORD" | jq 'select(.record.plugin_author_response == true) | .record | {title, status}'
+# While syncing, filter for author responses
+tap-wordpress-reviews --config config.json --catalog support_catalog.json | \
+  grep "^RECORD" | jq 'select(.record.plugin_author_response == true) | .record.title'
 ```
 
-### Watch it work in real-time with less
-```bash
-tap-wordpress-reviews --config config.json --catalog both_catalog.json 2>&1 | less +F
-```
+## 📊 Sync Multiple Plugins
 
-## 📈 Multiple Plugins
-
-### Track multiple plugins
 ```bash
-echo '{"plugins": ["wordpress-seo", "akismet", "woocommerce"], "number": 10}' > multi_config.json
+# Config for multiple plugins
+echo '{"plugins": ["wordpress-seo", "akismet", "woocommerce"], "number": 5}' > multi_config.json
+
+# Create catalog
 tap-wordpress-reviews --config multi_config.json --discover > multi_catalog.json
+
+# SYNC all plugins - watch it fetch from each!
+tap-wordpress-reviews --config multi_config.json --catalog multi_catalog.json 2>&1 | \
+  grep "Loading.*page"
+
+# Count reviews per plugin while syncing
+tap-wordpress-reviews --config multi_config.json --catalog multi_catalog.json | \
+  grep "^RECORD" | jq -r '.record.path' | cut -d'/' -f4 | sort | uniq -c
 ```
 
-### See reviews from all plugins
+## 🔄 Incremental Sync (Stateful)
+
+### First sync - saves state
+
 ```bash
-tap-wordpress-reviews --config multi_config.json --catalog multi_catalog.json | grep "^RECORD" | jq -r '.record.path' | cut -d'/' -f4 | sort | uniq -c
+# Initial sync - fetches ALL historical data
+tap-wordpress-reviews --config config.json --catalog catalog.json | \
+  tee >(grep "^STATE" | tail -1 > state.json)
+
+# Check what's in state (bookmark of newest record)
+cat state.json | jq '.bookmarks.reviews.replication_key_value'
 ```
 
-## 🐛 Debug & Development
+### Second sync - only new data
 
-### See all the URLs being fetched (watch the scraping happen)
 ```bash
-tap-wordpress-reviews --config config.json --catalog reviews_catalog.json 2>&1 | grep "Loading"
+# This only fetches reviews NEWER than the state!
+tap-wordpress-reviews --config config.json --catalog catalog.json --state state.json | \
+  grep "^RECORD" | wc -l
+
+# If no new reviews, this returns 0
 ```
 
-### Time how long it takes
+## 🔍 Monitor Sync Progress
+
+### Watch the tap work in real-time
+
 ```bash
-time tap-wordpress-reviews --config config.json --catalog reviews_catalog.json | wc -l
+# See all HTTP requests as they happen
+tap-wordpress-reviews --config config.json --catalog catalog.json 2>&1 | \
+  grep -E "(Loading|Processing|Syncing)"
+
+# Monitor state during backfill
+tap-wordpress-reviews --config config.json --catalog catalog.json | \
+  grep "^STATE" | jq '.bookmarks.reviews.backfill | {oldest: .oldest_seen, fetched: .total_fetched}'
+
+# Time the full sync
+time tap-wordpress-reviews --config config.json --catalog catalog.json | wc -l
 ```
 
-### See just errors if something goes wrong
+## 💾 Export Synced Data
+
+### Save reviews to JSON file
+
 ```bash
-tap-wordpress-reviews --config config.json --catalog reviews_catalog.json 2>&1 >/dev/null | grep -E "(ERROR|CRITICAL|WARNING)"
+# Sync and save all review records
+tap-wordpress-reviews --config config.json --catalog reviews_catalog.json | \
+  grep "^RECORD" | jq .record > reviews_backup.json
+
+# Create CSV of reviews
+tap-wordpress-reviews --config config.json --catalog reviews_catalog.json | \
+  grep "^RECORD" | jq -r '.record | [.date, .author, .rating, .title] | @csv' > reviews.csv
 ```
 
-### Dry run - see what would be synced without actually doing it
+### Generate a quick report
+
 ```bash
-tap-wordpress-reviews --config config.json --discover | jq '.streams[] | {stream: .tap_stream_id, records: "would sync from wordpress.org"}'
+# Sync and create rating distribution
+tap-wordpress-reviews --config config.json --catalog reviews_catalog.json | \
+  grep "^RECORD" | jq -r '.record.rating' | \
+  sort | uniq -c | awk '{print $2 " stars: " $1 " reviews"}'
 ```
 
-## 💾 Save Output for Analysis
+## 🐛 Debugging
 
-### Save all reviews to a file
+### See errors during sync
+
 ```bash
-tap-wordpress-reviews --config config.json --catalog reviews_catalog.json | grep "^RECORD" | jq .record > all_reviews.json
+# Run sync and only see errors
+tap-wordpress-reviews --config config.json --catalog catalog.json 2>&1 >/dev/null | \
+  grep -E "(ERROR|CRITICAL|WARNING|failed)"
+
+# Verbose mode - see everything
+tap-wordpress-reviews --config config.json --catalog catalog.json 2>&1 | less
 ```
 
-### Create CSV of reviews
+## 📝 Key Points to Remember
+
+1. **Discovery** (`--discover`) = NO HTTP requests, just returns schema
+2. **Sync** (`--catalog catalog.json`) = MAKES HTTP requests, fetches real data
+3. Always create a catalog before syncing
+4. Use `--state state.json` for incremental syncs
+5. The tap outputs Singer format: SCHEMA, RECORD, STATE messages
+6. Use `grep "^RECORD"` to filter just the data records
+7. Use `2>&1` to see log messages along with data
+
+## 🚀 Quick Test
+
 ```bash
-tap-wordpress-reviews --config config.json --catalog reviews_catalog.json | grep "^RECORD" | jq -r '.record | [.date, .author, .rating, .title] | @csv' > reviews.csv
+# Minimal test - fetch 5 reviews for one plugin
+echo '{"plugins": ["akismet"], "number": 5}' > test.json
+tap-wordpress-reviews --config test.json --discover > test_catalog.json
+tap-wordpress-reviews --config test.json --catalog test_catalog.json | \
+  grep "^RECORD" | jq '.record | {author, rating}'
 ```
 
-### Create a simple report
-```bash
-echo "=== WordPress Plugin Review Report ===" > report.txt
-echo "Generated: $(date)" >> report.txt
-echo "" >> report.txt
-tap-wordpress-reviews --config config.json --catalog reviews_catalog.json | grep "^RECORD" | jq -r '.record.rating' | sort | uniq -c | awk '{print $2 " stars: " $1 " reviews"}' >> report.txt
-```
-
-## 🚀 Quick Start
-
-**Remember:** Always activate the virtual environment first:
-```bash
-source test_venv/bin/activate
-```
-
-Then start with the discovery command to see what you get, and try syncing reviews for a small plugin to see the data structure!
+This will actually fetch real reviews from WordPress.org!

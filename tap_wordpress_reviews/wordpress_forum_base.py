@@ -55,7 +55,10 @@ class WordpressForumThread(ABC):
         logging.info(f'Loading thread: {self.path}')
         url: str = f'{SCHEME}{BASE_URL}{self.path}'
 
-        client: httpx.Client = httpx.Client(http2=False)
+        client: httpx.Client = httpx.Client(
+            http2=False,
+            timeout=httpx.Timeout(30.0)  # 30 second timeout for slow pages
+        )
         response: httpx._models.Response = client.get(url, follow_redirects=True)
 
         if response.status_code != CONNECTION_OK:
@@ -222,7 +225,10 @@ class WordpressForumThreadsList(ABC):
         logger.info(f'Loading threads page: {BASE_URL}{path}')
         url: str = f'{SCHEME}{BASE_URL}{path}'
 
-        client: httpx.Client = httpx.Client(http2=False)
+        client: httpx.Client = httpx.Client(
+            http2=False,
+            timeout=httpx.Timeout(30.0)  # 30 second timeout for slow pages
+        )
         response: httpx._models.Response = client.get(url, follow_redirects=True)
 
         if response.status_code != CONNECTION_OK:
