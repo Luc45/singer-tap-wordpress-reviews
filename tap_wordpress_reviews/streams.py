@@ -3,12 +3,13 @@
 
 from types import MappingProxyType
 
-# Streams metadata
+# Streams metadata - properly structured for discover.py
 STREAMS: MappingProxyType = MappingProxyType({
     'reviews': {
-        'key_properties': 'path',
+        'key_properties': ['path'],  # Using path as the unique identifier (must be a list)
         'replication_method': 'INCREMENTAL',
-        'replication_key': 'path',
-        'bookmark': 'date',
+        'replication_key': 'date',  # The date field from schema will be the bookmark
+        'bookmark': 'date',  # Legacy field for backward compatibility
+        'replication_keys': ['date'],  # List format for metadata.get_standard_metadata
     },
 })
