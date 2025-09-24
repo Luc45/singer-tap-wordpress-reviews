@@ -28,7 +28,8 @@ def main() -> None:
 
     # If discover flag was passed, run discovery mode and dump output to stdout
     if args.discover:
-        catalog: Catalog = discover()
+        # Pass config to discovery so it can respect support_threads setting
+        catalog: Catalog = discover(args.config)
         catalog.dump()
         return
 
@@ -38,7 +39,7 @@ def main() -> None:
         catalog = args.catalog
     else:
         # Load the catalog
-        catalog = discover()
+        catalog = discover(args.config)
 
     # Load state if provided
     state = {}

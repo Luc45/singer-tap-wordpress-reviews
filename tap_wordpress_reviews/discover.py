@@ -7,8 +7,11 @@ from tap_wordpress_reviews.schema import load_schemas
 from tap_wordpress_reviews.streams import STREAMS
 
 
-def discover() -> Catalog:  # noqa: WPS210
+def discover(config: dict = None) -> Catalog:  # noqa: WPS210
     """Load the Stream catalog.
+
+    Args:
+        config: Configuration dict with support_threads setting
 
     Returns:
         Catalog -- The catalog
@@ -16,8 +19,16 @@ def discover() -> Catalog:  # noqa: WPS210
     raw_schemas: dict = load_schemas()
     streams: list = []
 
+    # Check if support_threads is disabled in config
+    include_support = True
+    if config and not config.get('support_threads', True):
+        include_support = False
+
     # Parse every schema
     for stream_id, schema in raw_schemas.items():
+        # Skip support_threads if disabled in config
+        if stream_id == 'support_threads' and not include_support:
+            continue
         # Get stream metadata from STREAMS config
         stream_config = STREAMS.get(stream_id, {})
 
