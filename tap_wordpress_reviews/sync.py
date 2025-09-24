@@ -8,19 +8,22 @@ from singer.catalog import Catalog
 from singer import metadata
 
 from tap_wordpress_reviews.wordpress_reviews import WordpressReviews
+from tap_wordpress_reviews.wordpress_support_threads import WordpressSupportThreads
 
 LOGGER: logging.RootLogger = singer.get_logger()
 
 
 def sync(  # noqa: WPS210, WPS213
-    wp: WordpressReviews,
-    catalog: Catalog,
+    wp_reviews: WordpressReviews = None,
+    wp_support: WordpressSupportThreads = None,
+    catalog: Catalog = None,
     state: dict = None,
 ) -> None:
     """Sync data from tap source.
 
     Arguments:
-        wp {WordpressReviews} -- WordpressReviews client
+        wp_reviews {WordpressReviews} -- WordpressReviews client (optional)
+        wp_support {WordpressSupportThreads} -- WordpressSupportThreads client (optional)
         catalog {Catalog} -- Stream catalog
         state {dict} -- Current state with bookmarks
     """
@@ -93,7 +96,16 @@ def sync(  # noqa: WPS210, WPS213
         } if is_backfilling else None
 
         # The tap_data method yields rows of data from the API
-        for row in wp.reviews(since_date=bookmark_value, backfill_info=backfill_info):
+        # Use the appropriate client based on stream type
+        if stream.tap_stream_id == 'reviews' and wp_reviews:
+            data_generator = wp_reviews.reviews(since_date=bookmark_value, backfill_info=backfill_info)
+        elif stream.tap_stream_id == 'support_threads' and wp_support:
+            data_generator = wp_support.threads(since_date=bookmark_value, backfill_info=backfill_info)
+        else:
+            LOGGER.warning(f'No client available for stream: {stream.tap_stream_id}')
+            continue
+
+        for row in data_generator:
             # Get the bookmark value from this record
             if replication_key and replication_key in row:
                 current_bookmark = row[replication_key]
@@ -140,7 +152,10 @@ def sync(  # noqa: WPS210, WPS213
         # Write final state for this stream
         if record_count > 0:
             # Check if backfill might be complete (got fewer records than requested)
-            backfill_complete = is_backfilling and record_count < wp.number
+            # Use the appropriate client's number setting
+            expected_count = wp_reviews.number if stream.tap_stream_id == 'reviews' and wp_reviews else \
+                           wp_support.number if stream.tap_stream_id == 'support_threads' and wp_support else 100
+            backfill_complete = is_backfilling and record_count < expected_count
 
             if is_backfilling:
                 state[stream.tap_stream_id] = {

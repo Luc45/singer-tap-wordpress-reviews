@@ -10,6 +10,7 @@ from singer.catalog import Catalog
 from tap_wordpress_reviews.discover import discover
 from tap_wordpress_reviews.sync import sync
 from tap_wordpress_reviews.wordpress_reviews import WordpressReviews
+from tap_wordpress_reviews.wordpress_support_threads import WordpressSupportThreads
 
 VERSION: str = pkg_resources.get_distribution(
     'tap-wordpress-reviews',
@@ -46,13 +47,31 @@ def main() -> None:
         state = args.state
         LOGGER.info(f'Loaded state: {state}')
 
-    # Initialize WordPress client
-    wp: WordpressReviews = WordpressReviews(
-        args.config['plugins'],
-        args.config.get('number', 30),  # Default to 30 if not specified
-    )
+    # Initialize WordPress clients based on selected streams
+    wp_reviews = None
+    wp_support = None
 
-    sync(wp, catalog, state)
+    # Check which streams are selected in the catalog
+    selected_stream_ids = [stream.tap_stream_id for stream in catalog.get_selected_streams(state)]
+
+    # Initialize reviews client if reviews stream is selected
+    if 'reviews' in selected_stream_ids:
+        wp_reviews = WordpressReviews(
+            args.config['plugins'],
+            args.config.get('number', 30),  # Default to 30 if not specified
+        )
+        LOGGER.info('Initialized WordPress Reviews client')
+
+    # Initialize support threads client if support_threads stream is selected
+    if 'support_threads' in selected_stream_ids:
+        wp_support = WordpressSupportThreads(
+            args.config['plugins'],
+            args.config.get('number', 30),  # Default to 30 if not specified
+            args.config.get('thread_filter', 'all'),  # Filter: all, active, unresolved
+        )
+        LOGGER.info(f'Initialized WordPress Support Threads client (filter: {args.config.get("thread_filter", "all")})')
+
+    sync(wp_reviews=wp_reviews, wp_support=wp_support, catalog=catalog, state=state)
 
 
 if __name__ == '__main__':

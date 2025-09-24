@@ -1,0 +1,131 @@
+{
+	"selected": true,
+	"type": [
+		"null",
+		"object"
+	],
+	"additionalProperties": false,
+	"properties": {
+		"author": {
+			"type": [
+				"null",
+				"string"
+			]
+		},
+		"comments": {
+			"type": [
+				"null",
+				"array"
+			],
+			"items": {
+				"type": "object",
+				"additionalProperties": false,
+				"properties": {
+					"author": {
+						"type": [
+							"null",
+							"string"
+						]
+					},
+					"comment": {
+						"type": [
+							"null",
+							"string"
+						]
+					},
+					"date": {
+						"type": [
+							"null",
+							"string"
+						],
+						"format": "date-time"
+					}
+				}
+			}
+		},
+		"date": {
+			"type": [
+				"null",
+				"string"
+			],
+			"format": "date-time"
+		},
+		"filter_type": {
+			"type": [
+				"null",
+				"string"
+			],
+			"description": "Filter type used when fetching: all, active, unresolved"
+		},
+		"last_activity": {
+			"type": [
+				"null",
+				"string"
+			],
+			"description": "Last activity timestamp or relative time"
+		},
+		"participants": {
+			"type": [
+				"null",
+				"number"
+			],
+			"format": "integer"
+		},
+		"path": {
+			"type": "string"
+		},
+		"plugin": {
+			"type": "string"
+		},
+		"plugin_author_response": {
+			"type": [
+				"null",
+				"boolean"
+			],
+			"description": "Whether the plugin author has responded to the thread"
+		},
+		"replies": {
+			"type": [
+				"null",
+				"number"
+			],
+			"format": "integer"
+		},
+		"status": {
+			"type": [
+				"null",
+				"string"
+			],
+			"description": "Thread status: resolved or unresolved"
+		},
+		"tags": {
+			"type": [
+				"null",
+				"array"
+			],
+			"items": {
+				"type": "string",
+				"additionalProperties": false
+			}
+		},
+		"text": {
+			"type": [
+				"null",
+				"string"
+			]
+		},
+		"thread_type": {
+			"type": [
+				"null",
+				"string"
+			],
+			"description": "Type of support thread: bug, question, feature_request, how_to"
+		},
+		"title": {
+			"type": [
+				"null",
+				"string"
+			]
+		}
+	}
+}

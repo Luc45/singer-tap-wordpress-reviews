@@ -21,8 +21,8 @@ def discover() -> Catalog:  # noqa: WPS210
         # Get stream metadata from STREAMS config
         stream_config = STREAMS.get(stream_id, {})
 
-        # Fix: Use 'path' as key property for reviews, not 'id'
-        if stream_id == 'reviews':
+        # Fix: Use 'path' as key property for both reviews and support_threads, not 'id'
+        if stream_id in ['reviews', 'support_threads']:
             key_properties = ['path']
         else:
             key_properties = stream_config.get('key_properties', ['id'])
