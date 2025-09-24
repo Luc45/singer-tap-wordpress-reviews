@@ -1,0 +1,5 @@
+{
+  "plugins": ["wordpress-seo"],
+  "number": 30,
+  "thread_filter": "all"
+}

@@ -15,11 +15,30 @@ This tap:
 
 ### Step 1: Configure
 
-Create a file called `wp_reviews_config.json` in your working directory, following [sample_config.json](sample_config.json). The required parameters are `plugins`, which should be a list of plugins and `number` the number of reviews to fetch.
+Create a file called `config.json` in your working directory. You can copy from `config.json.example`:
+
+```bash
+cp config.json.example config.json
+```
+
+Or create it manually:
+
+```json
+{
+  "plugins": ["wordpress-seo"],
+  "number": 30,
+  "thread_filter": "all"
+}
+```
+
+**Configuration parameters:**
+- `plugins` (required): Array of WordPress plugin slugs to fetch data from
+- `number` (optional, default: 30): Number of items to fetch per page
+- `thread_filter` (optional, default: "all"): For support threads - can be "all", "active", or "unresolved"
 
 ### Step 2: Install and Run
 
-Create a virtual Python environment for this tap. This tap has been tested with Python 3.7, 3.8 and 3.9 and might run on future versions without problems.
+Create a virtual Python environment for this tap. This tap requires Python 3.10 or later.
 ```
 python -m venv singer-wp-reviews
 singer-wp-reviews/bin/python -m pip install --upgrade pip
@@ -37,8 +56,12 @@ singer-json/bin/pip install target-json
 
 Test the tap:
 
-```
-singer-wp-reviews/bin/tap-wordpress-reviews -c wp_plugin_reviews_config.json | singer-json/bin/target-json
+```bash
+# Run discovery
+singer-wp-reviews/bin/tap-wordpress-reviews --config config.json --discover
+
+# Run sync to JSON target
+singer-wp-reviews/bin/tap-wordpress-reviews --config config.json | singer-json/bin/target-json
 ```
 
 Copyright &copy; 2021 Yoast
