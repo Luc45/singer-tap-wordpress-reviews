@@ -83,7 +83,7 @@ class WordpressReviewsList(object):
         url: str = f'{SCHEME}{BASE_URL}{path}'
 
         client: httpx.Client = httpx.Client(http2=False)
-        response: httpx._models.Response = client.get(url)  # noqa: WPS437
+        response: httpx._models.Response = client.get(url, follow_redirects=True)  # noqa: WPS437
 
         if response.status_code != CONNECTION_OK:
             raise ConnectionError(f'Connection failed: {response.status_code}')

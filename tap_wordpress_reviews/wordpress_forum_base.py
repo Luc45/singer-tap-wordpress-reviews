@@ -56,7 +56,7 @@ class WordpressForumThread(ABC):
         url: str = f'{SCHEME}{BASE_URL}{self.path}'
 
         client: httpx.Client = httpx.Client(http2=False)
-        response: httpx._models.Response = client.get(url)
+        response: httpx._models.Response = client.get(url, follow_redirects=True)
 
         if response.status_code != CONNECTION_OK:
             raise ConnectionError(f'Connection failed: {response.status_code}')
@@ -223,7 +223,7 @@ class WordpressForumThreadsList(ABC):
         url: str = f'{SCHEME}{BASE_URL}{path}'
 
         client: httpx.Client = httpx.Client(http2=False)
-        response: httpx._models.Response = client.get(url)
+        response: httpx._models.Response = client.get(url, follow_redirects=True)
 
         if response.status_code != CONNECTION_OK:
             raise ConnectionError(f'Connection failed: {response.status_code}')
