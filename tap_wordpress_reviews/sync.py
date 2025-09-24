@@ -7,10 +7,7 @@ import singer
 from singer.catalog import Catalog
 from singer import metadata
 
-# from tap_wordpress_reviews.wordpress_reviews import WordpressReviews
-# from tap_wordpress_reviews.wordpress_reviews_improved import ImprovedWordpressReviews as WordpressReviews
-# Use all-or-nothing version for simplicity:
-from tap_wordpress_reviews.wordpress_reviews_all_or_nothing import AllOrNothingWordpressReviews as WordpressReviews
+from tap_wordpress_reviews.wordpress_reviews import WordpressReviews
 from tap_wordpress_reviews.wordpress_support_threads import WordpressSupportThreads
 
 LOGGER: logging.RootLogger = singer.get_logger()
@@ -101,19 +98,20 @@ def sync(  # noqa: WPS210, WPS213
 
         # Load plugin states for all-or-nothing approach
         plugin_states = {}
+        unified_state_path = 'unified_state.json'
         try:
             import json
-            with open('unified_state.json', 'r') as f:
+            with open(unified_state_path, 'r') as f:
                 unified = json.load(f)
                 plugin_states = unified.get('value', {}).get('plugin_states', {})
                 LOGGER.info(f'Loaded plugin states for {len(plugin_states)} plugins')
         except (FileNotFoundError, json.JSONDecodeError):
             LOGGER.info('No unified_state.json found - treating all plugins as incomplete')
+            plugin_states = {}
 
         # The tap_data method yields rows of data from the API
         # Use the appropriate client based on stream type
         if stream.tap_stream_id == 'reviews' and wp_reviews:
-            # Pass plugin states for all-or-nothing logic
             data_generator = wp_reviews.reviews(
                 since_date=bookmark_value if not is_backfilling else None,
                 backfill_info=backfill_info,
@@ -129,7 +127,25 @@ def sync(  # noqa: WPS210, WPS213
             LOGGER.warning(f'No client available for stream: {stream.tap_stream_id}')
             continue
 
+        # Track per-plugin data
+        plugin_record_counts = {}
+        plugin_newest_dates = {}
+        plugin_oldest_dates = {}
+
         for row in data_generator:
+            # Track which plugin this row is from
+            if 'plugin' in row:
+                plugin = row['plugin']
+                plugin_record_counts[plugin] = plugin_record_counts.get(plugin, 0) + 1
+
+                # Track newest/oldest per plugin
+                if replication_key and replication_key in row:
+                    date_val = row[replication_key]
+                    if plugin not in plugin_newest_dates or date_val > plugin_newest_dates[plugin]:
+                        plugin_newest_dates[plugin] = date_val
+                    if plugin not in plugin_oldest_dates or date_val < plugin_oldest_dates[plugin]:
+                        plugin_oldest_dates[plugin] = date_val
+
             # Get the bookmark value from this record
             if replication_key and replication_key in row:
                 current_bookmark = row[replication_key]
@@ -201,5 +217,34 @@ def sync(  # noqa: WPS210, WPS213
 
             singer.write_state(state)
             LOGGER.info(f'Finished syncing {stream.tap_stream_id}. Records: {record_count}, Newest: {max_bookmark}, Oldest: {min_bookmark}')
+
+            # Update unified_state.json with per-plugin tracking
+            for plugin in plugin_record_counts:
+                if plugin not in plugin_states:
+                    plugin_states[plugin] = {}
+                if stream.tap_stream_id not in plugin_states[plugin]:
+                    plugin_states[plugin][stream.tap_stream_id] = {}
+
+                plugin_state = plugin_states[plugin][stream.tap_stream_id]
+                plugin_state['count'] = plugin_record_counts[plugin]
+                plugin_state['newest_seen'] = plugin_newest_dates.get(plugin)
+                plugin_state['oldest_seen'] = plugin_oldest_dates.get(plugin)
+
+                # Mark as complete if we got all data (less than page size means no more)
+                # For reviews, a full page is 30 items
+                plugin_state['complete'] = plugin_record_counts[plugin] < 30 or backfill_complete
+
+                LOGGER.info(f"Plugin {plugin}: {plugin_record_counts[plugin]} {stream.tap_stream_id}, complete: {plugin_state['complete']}")
+
+            # Save unified state
+            unified_state = {
+                "type": "STATE",
+                "value": {
+                    "plugin_states": plugin_states
+                }
+            }
+            with open(unified_state_path, 'w') as f:
+                json.dump(unified_state, f, indent=2)
+                LOGGER.info(f"Updated unified_state.json with {len(plugin_states)} plugins")
         else:
             LOGGER.info(f'Finished syncing {stream.tap_stream_id}. No new records.')

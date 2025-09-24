@@ -1,145 +1,228 @@
-"""Wordpress Reviews model."""
+"""All-or-nothing WordPress reviews sync per plugin."""
 
-from typing import Dict, Generator, List, Union, Optional
-from datetime import datetime
-import singer
+from datetime import datetime, timezone
+from typing import Generator, List, Optional, Dict
+import logging
 
-from tap_wordpress_reviews.wordpress_reviews_list import WordpressReviewsList
+from tap_wordpress_reviews.wordpress_reviews_list import ImprovedWordpressReviewsList
 
-LOGGER = singer.get_logger()
+LOGGER = logging.getLogger(__name__)
 
 
-class WordpressReviews(object):
-    """Main logic for Wordpress reviws."""
+class WordpressReviews:
+    """WordPress reviews with all-or-nothing approach per plugin.
 
-    def __init__(
-        self,
-        plugins: Union[List[str], str],
-        number: int = 30,
-    ) -> None:
-        """Initialize plugin reviews api.
+    Logic:
+    - If a plugin is marked complete: only check page 1 for new reviews
+    - If a plugin is incomplete: fetch ALL reviews for that plugin
+    - No partial syncs - either you have all history or none
+    """
 
-        Arguments:
-            plugins {Union[List[str], str]} -- Name of the plugins
-            number {int} -- Number of reviews to yield (default: {30})
-        """
-        # Set plugin or plugins
-        if isinstance(plugins, str):
-            self.plugins = [plugins]
-        else:
-            self.plugins = plugins
-
+    def __init__(self, plugins: List[str], number: int = 500):
+        self.plugins = plugins
         self.number = number
+        self.reviews_lists = {}
 
-        # Initialize lists
-        self.reviews_lists: Dict[str, WordpressReviewsList] = {}
-        for plugin in self.plugins:
-            self.reviews_lists[plugin] = WordpressReviewsList(plugin)
+    def reviews(self, since_date: Optional[str] = None,
+                backfill_info: Optional[dict] = None,
+                plugin_states: Optional[Dict] = None) -> Generator:
+        """Get reviews with all-or-nothing approach per plugin.
 
-    def reviews(self, since_date: Optional[str] = None, backfill_info: Optional[dict] = None) -> Generator:
-        """Reviews property with optional date filtering and backfill support.
+        Args:
+            since_date: Boundary date for incremental sync
+            backfill_info: Legacy backfill info (for compatibility)
+            plugin_states: Per-plugin state tracking (preferred)
+                Format: {
+                    'mailpoet': {
+                        'reviews': {'complete': True, 'newest_seen': '2025-09-24...'},
+                        'support_threads': {...}
+                    }
+                }
 
-        Arguments:
-            since_date {Optional[str]} -- Only return reviews after this date (for incremental)
-                                         Format: ISO 8601 string (YYYY-MM-DDTHH:MM:SSZ)
-            backfill_info {Optional[dict]} -- Backfill state information
-                                             - is_backfilling: True if in backfill mode
-                                             - oldest_seen: Oldest date we've seen (resume boundary)
-                                             - total_fetched: Total records fetched so far
-
-        Returns:
-            Generator -- Object list of reviews
+        Yields:
+            Review dictionaries
         """
-        # Parse since_date if provided (for incremental mode)
+        # Parse since_date
         filter_date = None
-        if since_date and not backfill_info:
+        if since_date:
             try:
-                # Handle various date formats
                 if 'T' in since_date:
                     filter_date = datetime.fromisoformat(since_date.replace('Z', '+00:00'))
                 else:
                     filter_date = datetime.fromisoformat(since_date)
-                LOGGER.info(f"Filtering reviews since: {filter_date}")
+                LOGGER.info(f"All-or-nothing mode with boundary: {filter_date}")
             except ValueError as e:
-                LOGGER.warning(f"Invalid date format for bookmark: {since_date}. Error: {e}")
-                filter_date = None
+                LOGGER.warning(f"Invalid date format: {since_date}. Error: {e}")
 
-        # Parse backfill boundary if in backfill mode
-        backfill_boundary = None
-        if backfill_info and backfill_info.get('oldest_seen'):
-            try:
-                oldest = backfill_info['oldest_seen']
-                if 'T' in oldest:
-                    backfill_boundary = datetime.fromisoformat(oldest.replace('Z', '+00:00'))
-                else:
-                    backfill_boundary = datetime.fromisoformat(oldest)
-                LOGGER.info(f"Backfill mode: Continuing from oldest boundary: {backfill_boundary}")
-            except ValueError as e:
-                LOGGER.warning(f"Invalid date format for backfill boundary: {oldest}. Error: {e}")
-                backfill_boundary = None
+        # If no plugin states provided, treat all as incomplete
+        if not plugin_states:
+            plugin_states = {}
 
         for plugin in self.plugins:
-            LOGGER.info(f"Processing reviews for plugin: {plugin}")
-            reviews_count = 0
-            skipped_count = 0
+            LOGGER.info(f"\n{'='*60}")
+            LOGGER.info(f"Processing plugin: {plugin}")
 
-            try:
-                # Keep track of all reviews to handle the number limit properly
-                for _ in range(0, self.number * 10):  # Fetch more to account for filtering
-                    try:
-                        review_item = next(self.reviews_lists[plugin])
-                        record: dict = review_item.to_dict()
-                        record['plugin'] = plugin
+            # Check plugin state
+            plugin_state = plugin_states.get(plugin, {})
+            reviews_state = plugin_state.get('reviews', {})
+            is_complete = reviews_state.get('complete', False)
+            newest_seen = reviews_state.get('newest_seen')
 
-                        # Check if we should include this review based on date
-                        if 'date' in record:
-                            try:
-                                # Parse the review date
-                                review_date_str = record['date']
-                                if isinstance(review_date_str, str):
-                                    # Handle various date formats from WordPress
-                                    if 'T' in review_date_str:
-                                        review_date = datetime.fromisoformat(
-                                            review_date_str.replace('Z', '+00:00')
-                                        )
-                                    else:
-                                        review_date = datetime.fromisoformat(review_date_str)
+            if is_complete and newest_seen:
+                # Plugin is complete - only check page 1 for new reviews
+                LOGGER.info(f"✅ {plugin} is COMPLETE (newest: {newest_seen})")
+                LOGGER.info(f"   → Only checking page 1 for new reviews")
 
-                                    # In backfill mode: skip reviews newer or equal to boundary (already have them)
-                                    if backfill_boundary and review_date >= backfill_boundary:
-                                        skipped_count += 1
-                                        continue
-
-                                    # In incremental mode: skip reviews older or equal to bookmark
-                                    elif filter_date and review_date <= filter_date:
-                                        skipped_count += 1
-                                        continue
-                            except (ValueError, TypeError) as e:
-                                LOGGER.warning(f"Could not parse date for review: {e}")
-                                # Include review if we can't parse its date
-
-                        yield record
-                        reviews_count += 1
-
-                        # Stop if we've yielded enough reviews
-                        if reviews_count >= self.number:
-                            break
-
-                    except StopIteration:
-                        LOGGER.info(f"No more reviews available for plugin: {plugin}")
-                        break
-
-                if skipped_count > 0:
-                    if backfill_boundary:
-                        LOGGER.info(f"Skipped {skipped_count} already-fetched reviews for plugin: {plugin}")
+                # Parse newest_seen date
+                try:
+                    if 'T' in newest_seen:
+                        boundary_date = datetime.fromisoformat(newest_seen.replace('Z', '+00:00'))
                     else:
-                        LOGGER.info(f"Skipped {skipped_count} old reviews for plugin: {plugin}")
+                        boundary_date = datetime.fromisoformat(newest_seen)
+                except:
+                    boundary_date = filter_date
 
-                if backfill_info:
-                    LOGGER.info(f"Backfill progress: Yielded {reviews_count} reviews for plugin: {plugin}")
+                # Only check first page
+                yield from self._fetch_new_reviews_only(plugin, boundary_date)
+
+            else:
+                # Plugin is incomplete - fetch ALL reviews
+                if is_complete:
+                    LOGGER.info(f"⚠️ {plugin} marked complete but no newest_seen date")
                 else:
-                    LOGGER.info(f"Yielded {reviews_count} reviews for plugin: {plugin}")
+                    LOGGER.info(f"⏳ {plugin} is INCOMPLETE")
+                LOGGER.info(f"   → Fetching ALL reviews (up to {self.number})")
 
-            except StopIteration:
-                LOGGER.info(f"Finished processing all reviews for plugin: {plugin}")
-                continue
+                # Fetch all reviews for this plugin
+                yield from self._fetch_all_reviews(plugin)
+
+    def _fetch_new_reviews_only(self, plugin: str, boundary_date: datetime) -> Generator:
+        """Only check page 1 for new reviews since boundary_date.
+
+        This is very efficient - stops as soon as we hit an old review.
+        """
+        if plugin not in self.reviews_lists:
+            self.reviews_lists[plugin] = ImprovedWordpressReviewsList(plugin)
+
+        reviews_list = self.reviews_lists[plugin]
+        new_count = 0
+        old_count = 0
+
+        # Only load page 1
+        reviews_info, _ = reviews_list.load_page(1)
+
+        for info in reviews_info:
+            # Check approximate date first
+            approx_date = info.approximate_date
+
+            if approx_date and approx_date <= boundary_date:
+                # This review is old, and since reviews are ordered newest first,
+                # all remaining reviews will be old too
+                old_count += 1
+                LOGGER.debug(f"Hit old review, stopping (approx date: {approx_date})")
+                break
+
+            # Load the review to get exact date
+            review = info.get_review()
+            review.load()
+            record = review.to_dict()
+            record['plugin'] = plugin
+
+            # Double-check with exact date
+            if 'date' in record:
+                try:
+                    review_date_str = record['date']
+                    if isinstance(review_date_str, str):
+                        if 'T' in review_date_str:
+                            review_date = datetime.fromisoformat(
+                                review_date_str.replace('Z', '+00:00')
+                            )
+                        else:
+                            review_date = datetime.fromisoformat(review_date_str)
+
+                        if review_date <= boundary_date:
+                            # Old review, stop here
+                            old_count += 1
+                            LOGGER.debug(f"Hit old review, stopping (exact date: {review_date})")
+                            break
+                except (ValueError, TypeError) as e:
+                    LOGGER.warning(f"Could not parse date: {e}")
+
+            # This is a new review
+            yield record
+            new_count += 1
+
+        LOGGER.info(f"   {plugin}: {new_count} new reviews (stopped at first old)")
+
+    def _fetch_all_reviews(self, plugin: str) -> Generator:
+        """Fetch ALL reviews for a plugin (for incomplete plugins)."""
+        if plugin not in self.reviews_lists:
+            self.reviews_lists[plugin] = ImprovedWordpressReviewsList(plugin)
+
+        reviews_list = self.reviews_lists[plugin]
+        total_count = 0
+        page = 1
+
+        while total_count < self.number:
+            reviews_info, has_more = reviews_list.load_page(page)
+
+            if not reviews_info:
+                LOGGER.info(f"   No more reviews at page {page}")
+                break
+
+            for info in reviews_info:
+                review = info.get_review()
+                review.load()
+                record = review.to_dict()
+                record['plugin'] = plugin
+
+                yield record
+                total_count += 1
+
+                if total_count >= self.number:
+                    break
+
+            if not has_more:
+                LOGGER.info(f"   No more pages after page {page}")
+                break
+
+            page += 1
+
+            if page > 50:
+                LOGGER.warning(f"   Reached page limit")
+                break
+
+        LOGGER.info(f"   {plugin}: Fetched {total_count} reviews (full sync)")
+
+
+def create_all_or_nothing_tap():
+    """Create an all-or-nothing tap configuration.
+
+    This is the simplest and most reliable approach:
+    1. Check unified_state.json for each plugin's status
+    2. If complete: only check page 1 for new reviews
+    3. If incomplete: sync ALL reviews for that plugin
+    """
+    import json
+
+    # Load unified state to check plugin statuses
+    try:
+        with open('unified_state.json', 'r') as f:
+            state = json.load(f)
+        plugin_states = state.get('value', {}).get('plugin_states', {})
+    except FileNotFoundError:
+        LOGGER.warning("No unified_state.json found - treating all plugins as incomplete")
+        plugin_states = {}
+
+    # Load config
+    with open('woo_ecosystem_config.json', 'r') as f:
+        config = json.load(f)
+
+    # Create the reviews client
+    client = WordpressReviews(
+        plugins=config['plugins'],
+        number=config.get('number', 500)
+    )
+
+    # Return client with plugin states
+    return client, plugin_states
