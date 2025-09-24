@@ -37,16 +37,22 @@ def main() -> None:
         # Load command line catalog
         catalog = args.catalog
     else:
-        # Loadt the  catalog
+        # Load the catalog
         catalog = discover()
+
+    # Load state if provided
+    state = {}
+    if args.state:
+        state = args.state
+        LOGGER.info(f'Loaded state: {state}')
 
     # Initialize WordPress client
     wp: WordpressReviews = WordpressReviews(
         args.config['plugins'],
-        args.config['number'],
+        args.config.get('number', 30),  # Default to 30 if not specified
     )
 
-    sync(wp, catalog)
+    sync(wp, catalog, state)
 
 
 if __name__ == '__main__':
