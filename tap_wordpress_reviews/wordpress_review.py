@@ -81,7 +81,7 @@ class WordpressReview(object):  # noqa: WPS214, WPS230
             http2=False,
             timeout=httpx.Timeout(30.0)  # 30 second timeout for slow pages
         )
-        response: httpx._models.Response = client.get(url, allow_redirects=True)  # noqa: WPS437
+        response: httpx._models.Response = client.get(url, follow_redirects=True)  # noqa: WPS437
 
         if response.status_code != CONNECTION_OK:
             raise ConnectionError(f'Connection failed: {response.status_code}')
