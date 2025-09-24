@@ -3,7 +3,8 @@
 import logging
 from argparse import Namespace
 
-import pkg_resources
+from importlib.metadata import version
+
 from singer import get_logger, utils
 from singer.catalog import Catalog
 
@@ -12,9 +13,7 @@ from tap_wordpress_reviews.sync import sync
 from tap_wordpress_reviews.wordpress_reviews import WordpressReviews
 from tap_wordpress_reviews.wordpress_support_threads import WordpressSupportThreads
 
-VERSION: str = pkg_resources.get_distribution(
-    'tap-wordpress-reviews',
-).version
+VERSION: str = version('tap-wordpress-reviews')
 LOGGER: logging.RootLogger = get_logger()
 REQUIRED_CONFIG_KEYS: tuple = ('plugins',)
 

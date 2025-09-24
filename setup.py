@@ -10,6 +10,7 @@ setup(
     url='https://github.com/Yoast/singer-tap-wordpress-reviews',
     classifiers=['Programming Language :: Python :: 3 :: Only'],
     py_modules=['tap_wordpress_reviews'],
+    python_requires='>=3.10',
     install_requires=[
         'beautifulsoup4>=4.13.0,<5.0',
         'httpx>=0.28.0,<0.29.0',
