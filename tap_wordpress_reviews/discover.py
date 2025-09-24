@@ -19,15 +19,24 @@ def discover(config: dict = None) -> Catalog:  # noqa: WPS210
     raw_schemas: dict = load_schemas()
     streams: list = []
 
-    # Check if support_threads is disabled in config
+    # Check which streams to include based on config
     include_support = True
-    if config and not config.get('support_threads', True):
-        include_support = False
+    include_reviews = True
+
+    if config:
+        support_threads = config.get('support_threads', None)
+        if support_threads is False:
+            include_support = False
+        elif support_threads is True:
+            # If explicitly requesting support threads, exclude reviews
+            include_reviews = False
 
     # Parse every schema
     for stream_id, schema in raw_schemas.items():
-        # Skip support_threads if disabled in config
+        # Skip streams based on config
         if stream_id == 'support_threads' and not include_support:
+            continue
+        if stream_id == 'reviews' and not include_reviews:
             continue
         # Get stream metadata from STREAMS config
         stream_config = STREAMS.get(stream_id, {})
