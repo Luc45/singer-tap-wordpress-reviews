@@ -1,5 +1,7 @@
 # Usage Examples for tap-wordpress-reviews
 
+This tap can fetch both **reviews** and **support threads** from WordPress.org plugin pages.
+
 ## 🚀 Prerequisites
 
 ### 1. Activate Virtual Environment
@@ -26,6 +28,7 @@ cat > config.json << 'EOF'
 {
   "plugins": ["wordpress-seo", "akismet"],
   "number": 10,
+  "support_threads": false,
   "thread_filter": "all"
 }
 EOF
@@ -33,7 +36,8 @@ EOF
 
 **Configuration Options:**
 - `plugins` (required): Array of WordPress plugin slugs to fetch data from
-- `number` (optional, default: 30): Number of items to fetch per page
+- `number` (optional, default: 30): Number of items to fetch per plugin
+- `support_threads` (optional, default: false): Set to `true` to also fetch support threads
 - `thread_filter` (optional, default: "all"): For support threads - "all", "active", or "unresolved"
 
 **Popular plugin slugs:**
@@ -67,12 +71,12 @@ tap-wordpress-reviews --config config.json --catalog catalog.json 2>&1 | grep "L
 tap-wordpress-reviews --config config.json --catalog catalog.json | grep "^RECORD" | head -5 | jq .
 ```
 
-## 🎯 Sync Reviews Only
+## 🎯 Sync Reviews Only (Default)
 
 ### Fetch reviews for a single plugin
 
 ```bash
-# Config for one plugin
+# Config for one plugin (reviews only by default)
 echo '{"plugins": ["wordpress-seo"], "number": 10}' > config.json
 
 # Create catalog and select only reviews stream
@@ -92,16 +96,27 @@ tap-wordpress-reviews --config config.json --catalog reviews_catalog.json | \
   grep "^RECORD" | jq 'select(.record.rating == 1) | .record | {author, rating, text: .text[:100]}'
 ```
 
-## 🆘 Sync Support Threads Only
+## 🆘 Sync Support Threads
 
-### Fetch unresolved support threads
+### Fetch support threads only
 
 ```bash
-# Config for unresolved threads only
+# Config for support threads (must explicitly enable)
+cat > config_threads.json << 'EOF'
+{
+  "plugins": ["wordpress-seo"],
+  "number": 10,
+  "support_threads": true,
+  "thread_filter": "all"
+}
+EOF
+
+# For unresolved threads only
 cat > config_unresolved.json << 'EOF'
 {
   "plugins": ["wordpress-seo"],
   "number": 10,
+  "support_threads": true,
   "thread_filter": "unresolved"
 }
 EOF
@@ -123,10 +138,32 @@ tap-wordpress-reviews --config config.json --catalog support_catalog.json | \
   grep "^RECORD" | jq 'select(.record.plugin_author_response == true) | .record.title'
 ```
 
+## 📊 Sync Both Reviews and Support Threads
+
+```bash
+# Config for BOTH reviews and support threads
+cat > both_config.json << 'EOF'
+{
+  "plugins": ["wordpress-seo", "woocommerce"],
+  "number": 50,
+  "support_threads": true,
+  "thread_filter": "all"
+}
+EOF
+
+# Create catalog with both streams
+tap-wordpress-reviews --config both_config.json --discover > both_catalog.json
+
+# SYNC both reviews and support threads
+tap-wordpress-reviews --config both_config.json --catalog both_catalog.json | \
+  grep "^RECORD" | jq -r '.stream' | sort | uniq -c
+# Output: count of reviews vs support_threads
+```
+
 ## 📊 Sync Multiple Plugins
 
 ```bash
-# Config for multiple plugins
+# Config for multiple plugins (reviews only by default)
 echo '{"plugins": ["wordpress-seo", "akismet", "woocommerce"], "number": 5}' > multi_config.json
 
 # Create catalog
@@ -230,8 +267,14 @@ tap-wordpress-reviews --config config.json --catalog catalog.json 2>&1 | less
 ## 🚀 Quick Test
 
 ```bash
-# Minimal test - fetch 5 reviews for one plugin
+# Test 1: Reviews only (default)
 echo '{"plugins": ["akismet"], "number": 5}' > test.json
+tap-wordpress-reviews --config test.json --discover > test_catalog.json
+tap-wordpress-reviews --config test.json --catalog test_catalog.json | \
+  grep "^RECORD" | jq '.record | {author, rating}'
+
+# Test 2: Both reviews and support threads
+echo '{"plugins": ["akismet"], "number": 5, "support_threads": true}' > test_both.json
 tap-wordpress-reviews --config test.json --discover > test_catalog.json
 tap-wordpress-reviews --config test.json --catalog test_catalog.json | \
   grep "^RECORD" | jq '.record | {author, rating}'
