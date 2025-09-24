@@ -119,9 +119,9 @@ class ImprovedWordpressReviewsList:
 
         This is approximate but good enough for filtering.
         """
-        from datetime import timedelta
+        from datetime import timedelta, timezone
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         time_text = time_text.lower().strip()
 
         # Patterns to match

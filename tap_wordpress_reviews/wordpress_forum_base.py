@@ -64,7 +64,7 @@ class WordpressForumThread(ABC):
             http2=False,
             timeout=httpx.Timeout(30.0)  # 30 second timeout for slow pages
         )
-        response: httpx._models.Response = client.get(url, follow_redirects=True)
+        response: httpx._models.Response = client.get(url, allow_redirects=True)
 
         if response.status_code != CONNECTION_OK:
             raise ConnectionError(f'Connection failed: {response.status_code}')
@@ -237,7 +237,7 @@ class WordpressForumThreadsList(ABC):
             http2=False,
             timeout=httpx.Timeout(30.0)  # 30 second timeout for slow pages
         )
-        response: httpx._models.Response = client.get(url, follow_redirects=True)
+        response: httpx._models.Response = client.get(url, allow_redirects=True)
 
         if response.status_code != CONNECTION_OK:
             raise ConnectionError(f'Connection failed: {response.status_code}')
