@@ -2,6 +2,8 @@
 
 import datetime
 import logging
+import time
+import random
 from typing import List, Optional
 from urllib.parse import urlparse
 
@@ -71,6 +73,9 @@ class WordpressReview(object):  # noqa: WPS214, WPS230
         """
         logging.info(f'Loading review: {self.path}')
         url: str = f'{SCHEME}{BASE_URL}{self.path}'
+
+        # Polite delay between requests (1-2 seconds)
+        time.sleep(random.uniform(1.0, 2.0))
 
         client: httpx.Client = httpx.Client(
             http2=False,

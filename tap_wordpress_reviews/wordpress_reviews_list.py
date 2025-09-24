@@ -1,6 +1,8 @@
 """Wordpress Reviews List model."""
 
 import logging
+import time
+import random
 from math import ceil
 from typing import List
 
@@ -81,6 +83,9 @@ class WordpressReviewsList(object):
 
         logger.info(f'Loading reviews page: {BASE_URL}{path}')
         url: str = f'{SCHEME}{BASE_URL}{path}'
+
+        # Polite delay between requests (1-2 seconds)
+        time.sleep(random.uniform(1.0, 2.0))
 
         client: httpx.Client = httpx.Client(
             http2=False,

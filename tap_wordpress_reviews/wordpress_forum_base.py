@@ -1,6 +1,8 @@
 """Base classes for WordPress forum threads (reviews or support)."""
 
 import logging
+import time
+import random
 from abc import ABC, abstractmethod
 from math import ceil
 from typing import List, Optional, Dict, Any
@@ -54,6 +56,9 @@ class WordpressForumThread(ABC):
         """Load the thread."""
         logging.info(f'Loading thread: {self.path}')
         url: str = f'{SCHEME}{BASE_URL}{self.path}'
+
+        # Polite delay between requests (1-2 seconds)
+        time.sleep(random.uniform(1.0, 2.0))
 
         client: httpx.Client = httpx.Client(
             http2=False,
@@ -224,6 +229,9 @@ class WordpressForumThreadsList(ABC):
 
         logger.info(f'Loading threads page: {BASE_URL}{path}')
         url: str = f'{SCHEME}{BASE_URL}{path}'
+
+        # Polite delay between requests (1-2 seconds)
+        time.sleep(random.uniform(1.0, 2.0))
 
         client: httpx.Client = httpx.Client(
             http2=False,
