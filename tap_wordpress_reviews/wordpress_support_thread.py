@@ -57,10 +57,11 @@ class WordpressSupportThread(WordpressForumThread):
         status_list = soup.find('li', string=lambda text: text and 'Status:' in text)
         if status_list:
             status_text = status_list.get_text().lower()
-            if 'resolved' in status_text:
-                return 'resolved'
-            elif 'not resolved' in status_text:
+            # Check for "not resolved" first since it contains "resolved"
+            if 'not resolved' in status_text:
                 return 'unresolved'
+            elif 'resolved' in status_text:
+                return 'resolved'
 
         # Default to unresolved
         return 'unresolved'
