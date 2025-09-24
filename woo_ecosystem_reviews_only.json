@@ -1,0 +1,22 @@
+{
+  "plugins": [
+    "mailpoet",
+    "woocommerce",
+    "woocommerce-payfast-gateway",
+    "woocommerce-shipstation-integration",
+    "woocommerce-google-analytics-integration",
+    "woocommerce-gateway-paypal-powered-by-braintree",
+    "woocommerce-gateway-paypal-express-checkout",
+    "woocommerce-square",
+    "woocommerce-shipping",
+    "woo-gutenberg-products-block",
+    "woocommerce-paypal-here-gateway",
+    "woocommerce-payments",
+    "google-listings-and-ads",
+    "pinterest-for-woocommerce",
+    "helio",
+    "woocommerce-analytics"
+  ],
+  "number": 500,
+  "support_threads": false
+}
