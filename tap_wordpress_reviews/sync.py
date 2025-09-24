@@ -7,7 +7,10 @@ import singer
 from singer.catalog import Catalog
 from singer import metadata
 
-from tap_wordpress_reviews.wordpress_reviews import WordpressReviews
+# from tap_wordpress_reviews.wordpress_reviews import WordpressReviews
+# from tap_wordpress_reviews.wordpress_reviews_improved import ImprovedWordpressReviews as WordpressReviews
+# Use all-or-nothing version for simplicity:
+from tap_wordpress_reviews.wordpress_reviews_all_or_nothing import AllOrNothingWordpressReviews as WordpressReviews
 from tap_wordpress_reviews.wordpress_support_threads import WordpressSupportThreads
 
 LOGGER: logging.RootLogger = singer.get_logger()
@@ -92,15 +95,36 @@ def sync(  # noqa: WPS210, WPS213
         backfill_info = {
             'is_backfilling': is_backfilling,
             'oldest_seen': oldest_seen,
+            'newest_seen': bookmark_value,  # The newest date we've seen (resume boundary)
             'total_fetched': backfill_total
         } if is_backfilling else None
+
+        # Load plugin states for all-or-nothing approach
+        plugin_states = {}
+        try:
+            import json
+            with open('unified_state.json', 'r') as f:
+                unified = json.load(f)
+                plugin_states = unified.get('value', {}).get('plugin_states', {})
+                LOGGER.info(f'Loaded plugin states for {len(plugin_states)} plugins')
+        except (FileNotFoundError, json.JSONDecodeError):
+            LOGGER.info('No unified_state.json found - treating all plugins as incomplete')
 
         # The tap_data method yields rows of data from the API
         # Use the appropriate client based on stream type
         if stream.tap_stream_id == 'reviews' and wp_reviews:
-            data_generator = wp_reviews.reviews(since_date=bookmark_value, backfill_info=backfill_info)
+            # Pass plugin states for all-or-nothing logic
+            data_generator = wp_reviews.reviews(
+                since_date=bookmark_value if not is_backfilling else None,
+                backfill_info=backfill_info,
+                plugin_states=plugin_states
+            )
         elif stream.tap_stream_id == 'support_threads' and wp_support:
-            data_generator = wp_support.threads(since_date=bookmark_value, backfill_info=backfill_info)
+            # In backfill mode, don't pass since_date (handled via backfill_info)
+            data_generator = wp_support.threads(
+                since_date=bookmark_value if not is_backfilling else None,
+                backfill_info=backfill_info
+            )
         else:
             LOGGER.warning(f'No client available for stream: {stream.tap_stream_id}')
             continue

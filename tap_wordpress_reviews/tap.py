@@ -10,7 +10,9 @@ from singer.catalog import Catalog
 
 from tap_wordpress_reviews.discover import discover
 from tap_wordpress_reviews.sync import sync
-from tap_wordpress_reviews.wordpress_reviews import WordpressReviews
+# from tap_wordpress_reviews.wordpress_reviews import WordpressReviews
+# from tap_wordpress_reviews.wordpress_reviews_improved import ImprovedWordpressReviews as WordpressReviews
+from tap_wordpress_reviews.wordpress_reviews_all_or_nothing import AllOrNothingWordpressReviews as WordpressReviews
 from tap_wordpress_reviews.wordpress_support_threads import WordpressSupportThreads
 
 VERSION: str = version('tap-wordpress-reviews')
@@ -43,8 +45,12 @@ def main() -> None:
     # Load state if provided
     state = {}
     if args.state:
-        state = args.state
-        LOGGER.info(f'Loaded state: {state}')
+        # Extract the 'value' portion from Singer state format
+        if isinstance(args.state, dict) and 'value' in args.state:
+            state = args.state['value']
+        else:
+            state = args.state
+        LOGGER.info(f'Loaded state: {args.state}')
 
     # Initialize WordPress clients based on selected streams
     wp_reviews = None
