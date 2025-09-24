@@ -229,12 +229,9 @@ def sync(  # noqa: WPS210, WPS213
                 plugin_state['count'] = plugin_record_counts[plugin]
                 plugin_state['newest_seen'] = plugin_newest_dates.get(plugin)
                 plugin_state['oldest_seen'] = plugin_oldest_dates.get(plugin)
+                # No "complete" flag - the tap always checks all pages until it hits a known review
 
-                # Mark as complete if we got all data (less than page size means no more)
-                # For reviews, a full page is 30 items
-                plugin_state['complete'] = plugin_record_counts[plugin] < 30 or backfill_complete
-
-                LOGGER.info(f"Plugin {plugin}: {plugin_record_counts[plugin]} {stream.tap_stream_id}, complete: {plugin_state['complete']}")
+                LOGGER.info(f"Plugin {plugin}: {plugin_record_counts[plugin]} {stream.tap_stream_id}")
 
             # Save unified state
             unified_state = {

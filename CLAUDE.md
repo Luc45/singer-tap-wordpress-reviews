@@ -1,5 +1,14 @@
 # CRITICAL: tap-wordpress-reviews Setup & Testing
 
+## 🚨 FUNDAMENTAL UNDERSTANDING
+
+### How This Tap Works
+1. **Writes state** to `unified_state.json` at the end of each sync
+2. **Tracks per-plugin data**: `newest_seen`, `oldest_seen`, and `count`
+3. **Always fetches all pages** up to the configured limit
+4. **Not truly incremental**: Doesn't stop when it hits known data
+5. **Simple approach**: Re-fetches everything each time
+
 ## ⚠️ BEFORE RUNNING ANY SYNC
 
 ### 1. CHECK THE CATALOG
@@ -22,19 +31,63 @@ ls -la tap_env/
 tap-wordpress-reviews --config [config_file] --discover > [new_catalog_file]
 ```
 
-## 🔥 KNOWN ISSUES
+## 📁 State File: unified_state.json
 
-### Discovery Bug (FIXED in source, NOT in venv)
-- **Problem**: Discovery didn't respect `support_threads: false` in config
-- **Fix**: Modified `discover()` function to accept and respect config
+### What Gets Stored
+```json
+{
+  "type": "STATE",
+  "value": {
+    "plugin_states": {
+      "woocommerce": {
+        "reviews": {                    // Separate state per stream type
+          "count": 742,
+          "newest_seen": "2025-09-15T10:30:00",
+          "oldest_seen": "2025-06-01T14:22:00"
+        },
+        "support_threads": {            // Only if support threads were synced
+          "count": 1523,
+          "newest_seen": "2025-09-24T08:00:00",
+          "oldest_seen": "2025-01-01T12:00:00"
+        }
+      },
+      "mailpoet": { ... }              // Each plugin tracked separately
+    }
+  }
+}
+```
+
+### For Initial/Full Syncs
+- **DELETE unified_state.json** to start fresh
+- The tap will fetch ALL history up to your configured limit
+- State file will be created at the end of the sync
+
+### For Subsequent Syncs
+- Keep the unified_state.json from previous run (though it's not used for stopping)
+- Tap will fetch all data again up to the configured limit
+- State is updated with new `newest_seen` dates
+
+## 🔥 KNOWN ISSUES & GOTCHAS
+
+### DO NOT TRUST MY TESTING
+- **ALWAYS verify the catalog** before saying "yes you can run it"
+- **ALWAYS check which tap version** is being used (venv vs source)
+- **ALWAYS run a small test** before full production runs
+- **DELETE unified_state.json for full initial syncs**
+
+### Discovery Configuration
+- **Behavior**: Respects `support_threads` setting in config
+- `support_threads: false` → Only generates reviews stream
+- `support_threads: true` → Only generates support_threads stream
 - **Location**: `tap_wordpress_reviews/discover.py`
-- **CRITICAL**: If using venv installation, reinstall after fixes!
+- **Note**: If using venv installation, must reinstall after code changes
 
-### httpx Compatibility
-- **Version**: 0.28.1 uses `follow_redirects=True` (not `allow_redirects`)
+### httpx Configuration
+- **Version**: 0.28.1
+- **Redirect parameter**: Uses `follow_redirects=True`
 - **Location**: `tap_wordpress_reviews/wordpress_review.py`
 
-## 📋 TEST CHECKLIST BEFORE PRODUCTION
+## 📋 MANDATORY CHECKLIST BEFORE SAYING "YES YOU CAN RUN IT"
 
 - [ ] Verify config has correct settings
 - [ ] Regenerate catalog with fixed discovery

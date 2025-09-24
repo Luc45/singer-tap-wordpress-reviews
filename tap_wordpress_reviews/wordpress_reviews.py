@@ -62,39 +62,22 @@ class WordpressReviews:
             LOGGER.info(f"\n{'='*60}")
             LOGGER.info(f"Processing plugin: {plugin}")
 
-            # Check plugin state
+            # Check plugin state - ignore "complete" flag, only use newest_seen
             plugin_state = plugin_states.get(plugin, {})
             reviews_state = plugin_state.get('reviews', {})
-            is_complete = reviews_state.get('complete', False)
             newest_seen = reviews_state.get('newest_seen')
 
-            if is_complete and newest_seen:
-                # Plugin is complete - only check page 1 for new reviews
-                LOGGER.info(f"✅ {plugin} is COMPLETE (newest: {newest_seen})")
-                LOGGER.info(f"   → Only checking page 1 for new reviews")
-
-                # Parse newest_seen date
-                try:
-                    if 'T' in newest_seen:
-                        boundary_date = datetime.fromisoformat(newest_seen.replace('Z', '+00:00'))
-                    else:
-                        boundary_date = datetime.fromisoformat(newest_seen)
-                except:
-                    boundary_date = filter_date
-
-                # Only check first page
-                yield from self._fetch_new_reviews_only(plugin, boundary_date)
-
+            if newest_seen:
+                # We have previous data - always fetch ALL pages until we hit known reviews
+                LOGGER.info(f"📊 {plugin} has previous sync (newest: {newest_seen})")
+                LOGGER.info(f"   → Fetching ALL reviews (up to {self.number}) until we hit known data")
             else:
-                # Plugin is incomplete - fetch ALL reviews
-                if is_complete:
-                    LOGGER.info(f"⚠️ {plugin} marked complete but no newest_seen date")
-                else:
-                    LOGGER.info(f"⏳ {plugin} is INCOMPLETE")
+                # No previous sync - fetch everything
+                LOGGER.info(f"🆕 {plugin} is NEW - no previous sync")
                 LOGGER.info(f"   → Fetching ALL reviews (up to {self.number})")
 
-                # Fetch all reviews for this plugin
-                yield from self._fetch_all_reviews(plugin)
+            # Always fetch all reviews - the fetch function will stop at known data
+            yield from self._fetch_all_reviews(plugin)
 
     def _fetch_new_reviews_only(self, plugin: str, boundary_date: datetime) -> Generator:
         """Only check page 1 for new reviews since boundary_date.
